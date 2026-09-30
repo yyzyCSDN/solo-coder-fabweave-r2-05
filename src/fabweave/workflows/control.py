@@ -19,6 +19,7 @@ from fabweave.maintenance.window import MaintenancePolicy, assignment_decision
 from fabweave.metrology.sampling import Wafer, deterministic_sample
 from fabweave.queue_time.enforcer import QueueLimit, queue_time_decision
 from fabweave.recipe.qualification import Qualification, qualification_decision
+from fabweave.reticle.cleaning import ReticleCleaningLog, cleaning_reservation_decision
 from fabweave.reticle.reservation import Reservation, ReservationBook
 from fabweave.rework.authorization import ReworkPolicy, authorization_decision
 from fabweave.shipment.commit import Allocation, CommitLedger
@@ -87,6 +88,27 @@ def reserve_qualified(
         return combined
     reserved = book.reserve_batch(request_id, requested)
     return allow(request_id=request_id, reservation_count=len(reserved))
+
+
+def reserve_cleanable(
+    book: ReservationBook,
+    cleaning: ReticleCleaningLog,
+    request_id: str,
+    requested: list[Reservation],
+    assignments: dict[str, tuple[str, str]],
+    qualifications: list[Qualification],
+    at: int,
+    open_end: int,
+) -> Decision:
+    """Qualified reservation that also fails closed on every cleaning hold."""
+
+    hold_decisions = [
+        cleaning_reservation_decision(item.reticle_id, item.window, cleaning, open_end) for item in requested
+    ]
+    gated = _combine(hold_decisions, request_id=request_id)
+    if not gated.allowed:
+        return gated
+    return reserve_qualified(book, request_id, requested, assignments, qualifications, at)
 
 
 def qualified_assignment(
