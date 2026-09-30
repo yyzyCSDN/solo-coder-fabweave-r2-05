@@ -20,6 +20,7 @@ from fabweave.metrology.sampling import Wafer, deterministic_sample
 from fabweave.queue_time.enforcer import QueueLimit, queue_time_decision
 from fabweave.recipe.qualification import Qualification, qualification_decision
 from fabweave.reticle.reservation import Reservation, ReservationBook
+from fabweave.reticle.cleaning import ReticleCleaningService, reservation_decision as reticle_cleaning_gate
 from fabweave.rework.authorization import ReworkPolicy, authorization_decision
 from fabweave.shipment.commit import Allocation, CommitLedger
 from fabweave.spc.control import western_electric_rules
@@ -82,6 +83,28 @@ def reserve_qualified(
             continue
         tool_id, chamber_id = assignment
         decisions.append(qualification_decision(tool_id, chamber_id, reservation.recipe_revision, at, qualifications))
+    combined = _combine(decisions, request_id=request_id)
+    if not combined.allowed:
+        return combined
+    reserved = book.reserve_batch(request_id, requested)
+    return allow(request_id=request_id, reservation_count=len(reserved))
+
+
+def reserve_available_reticles(
+    cleaning: ReticleCleaningService,
+    book: ReservationBook,
+    request_id: str,
+    requested: list[Reservation],
+    at: int,
+) -> Decision:
+    """Reserve a batch only when every reticle is outside a cleaning hold.
+
+    The batch is checked fail-closed first; the reservation book itself is only
+    touched when all cleaning gates pass, so a blocked request never creates a
+    partial booking.
+    """
+
+    decisions = [reticle_cleaning_gate(cleaning, item.reticle_id, item.window, at) for item in requested]
     combined = _combine(decisions, request_id=request_id)
     if not combined.allowed:
         return combined

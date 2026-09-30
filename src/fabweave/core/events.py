@@ -48,6 +48,10 @@ class EventLog:
         self._ids[event_id] = event
         return deepcopy(event)
 
+    def get(self, event_id: str) -> Event | None:
+        existing = self._ids.get(event_id)
+        return deepcopy(existing) if existing is not None else None
+
     def read(self, stream: str) -> tuple[Event, ...]:
         return tuple(deepcopy(self._streams.get(stream, [])))
 
